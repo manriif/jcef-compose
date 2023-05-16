@@ -30,18 +30,18 @@ private const val WHEEL_ROTATION_FACTOR = 10
 /**
  * [CefBrowser] OSR implementation.
  */
-internal class BrowserOsr(
+internal class OsrCefBrowser(
     private val composeWindow: ComposeWindow,
     client: CefClient,
     url: String,
     context: CefRequestContext? = null,
-    parent: BrowserOsr? = null,
+    parent: OsrCefBrowser? = null,
     inspectAt: Point? = null
 ) : CefBrowser_N(client, url, context, parent, inspectAt),
     CefRenderHandler {
 
     private val uiComponent: Component = findCanvas(composeWindow) ?: composeWindow
-    private val renderer = BrowserRenderer()
+    private val renderer = OsrBitmapRenderer()
     private val contentRect = Rectangle(0, 0, 1, 1)
     private var screenPoint = Point(0, 0)
     private var windowHandle = 0L
@@ -165,7 +165,7 @@ internal class BrowserOsr(
         context: CefRequestContext,
         parent: CefBrowser_N?,
         inspectAt: Point
-    ): CefBrowser_N = BrowserOsr(composeWindow, client, url, context, this, inspectAt)
+    ): CefBrowser_N = OsrCefBrowser(composeWindow, client, url, context, this, inspectAt)
 
     override fun getViewRect(browser: CefBrowser): Rectangle = contentRect
 

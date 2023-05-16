@@ -7,7 +7,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import me.manriif.jcef.Cef
 
-const val COMPOSE_MULTIPLATFORM_GITHUB = "https://github.com/JetBrains/compose-multiplatform"
+const val PROJECT_GITHUB_PAGE = "https://github.com/Manriif/jcef-compose"
 
 fun cefApplication(
     title: State<String>,

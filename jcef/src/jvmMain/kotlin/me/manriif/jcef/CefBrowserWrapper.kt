@@ -7,7 +7,7 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInWindow
 import org.cef.CefClient
-import org.cef.browser.BrowserOsr
+import org.cef.browser.OsrCefBrowser
 import org.cef.browser.CefBrowser
 import org.jetbrains.skia.Image
 import java.awt.KeyboardFocusManager
@@ -20,9 +20,9 @@ import java.awt.event.MouseWheelEvent
  *
  * @see [me.manriif.jcef.CefBrowser].
  */
-class CefBrowserWrapper(private val window: ComposeWindow, client: CefClient, url: String) {
+class CefBrowserWrapper(window: ComposeWindow, client: CefClient, url: String) {
 
-    private val osrBrowser = BrowserOsr(window, client, url)
+    private val osrBrowser = OsrCefBrowser(window, client, url)
 
     internal val image: Image
         get() = osrBrowser.image

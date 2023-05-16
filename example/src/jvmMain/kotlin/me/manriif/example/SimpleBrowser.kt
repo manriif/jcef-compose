@@ -9,6 +9,6 @@ import me.manriif.jcef.CefBrowser
  */
 fun simpleBrowser() = cefApplication(mutableStateOf("Simple Browser")) {
     MaterialTheme {
-        CefBrowser(COMPOSE_MULTIPLATFORM_GITHUB, window)
+        CefBrowser(PROJECT_GITHUB_PAGE, window)
     }
 }

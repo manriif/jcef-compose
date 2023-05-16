@@ -8,10 +8,9 @@ import java.nio.ByteBuffer
 import java.util.concurrent.locks.ReentrantLock
 
 /**
- * This renderer is too slow, especially on HiDPI screens.
- * It should be replaced.
+ * This renderer is too slow, especially on HiDPI display, it should be replaced.
  */
-internal class BrowserRenderer {
+internal class OsrBitmapRenderer {
 
     private var bitmap: Bitmap? = null
     private var bitmapPixels: ByteArray? = null

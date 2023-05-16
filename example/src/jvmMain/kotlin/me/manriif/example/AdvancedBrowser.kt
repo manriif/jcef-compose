@@ -41,7 +41,7 @@ private val TopRoundCornerShape = RoundedCornerShape(
 @Stable
 private class BrowserState {
     var browser: CefBrowser? by mutableStateOf(null)
-    var url: String by mutableStateOf(COMPOSE_MULTIPLATFORM_GITHUB)
+    var url: String by mutableStateOf(PROJECT_GITHUB_PAGE)
     var isLoading: Boolean by mutableStateOf(false)
     var canGoBack: Boolean by mutableStateOf(false)
     var canGoForward: Boolean by mutableStateOf(false)
