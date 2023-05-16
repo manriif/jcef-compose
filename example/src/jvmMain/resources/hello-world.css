@@ -1,0 +1,68 @@
+/* https://codepen.io/vickimurley/pen/LYXRwo */
+
+body {
+    display: -webkit-flex;
+    color: #6B4ECA; /* purple */
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+#main {
+    font-family: "Avenir Next", Helvetica;
+    border: 2px solid lightgrey;
+    border-radius: 10px;
+    margin: auto;
+    width: 700px;
+    height: 430px;
+    overflow: hidden;
+}
+
+.hello,.world {
+    text-align: center;
+    margin: 10px auto -50px auto;
+
+    text-transform: uppercase;
+    font-family: "Avenir Next", Helvetica;
+    font-weight: bold;
+    font-size: 6em;
+    letter-spacing: 4;
+}
+
+.hello {
+    margin-top: 90px;
+}
+
+.world {
+    -webkit-transition-property: -webkit-transform, opacity;
+    -webkit-transition-timing-function: ease-out;
+    -webkit-transition-duration: 1s;
+}
+
+.world.offscreen {
+    -webkit-transform: translateY(280px) scaleY(2);
+    opacity: 0.5;
+}
+
+.letter {
+    display: inline-block;
+    -webkit-transition-property: -webkit-transform, opacity;
+    -webkit-transition-timing-function: ease-out;
+    -webkit-transition-duration: 1s;
+}
+
+.letter.offscreen {
+    -webkit-transform: translateX(-720px) rotate(-360deg);
+    opacity: 0.5;
+}
+
+.offscreen {
+    -webkit-transition-property: none;
+}
+
+@media screen and (device-width:768px) {
+    #main {
+        width: 540px;
+    }
+}
