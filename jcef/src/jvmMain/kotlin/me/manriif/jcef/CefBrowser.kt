@@ -23,13 +23,11 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
 import me.friwi.jcefmaven.CefAppBuilder
 import me.friwi.jcefmaven.EnumProgress
 import me.friwi.jcefmaven.IProgressHandler
@@ -113,10 +111,8 @@ fun CefBrowser(
             }
         }.launchIn(this)
 
-        withContext(Dispatchers.Default) {
-            runCatching { client.value = Cef.newClient(initState) }.exceptionOrNull()
-                ?.let(error::value::set)
-        }
+        runCatching { client.value = Cef.newClient(initState) }.exceptionOrNull()
+            ?.let(error::value::set)
     }
 }
 

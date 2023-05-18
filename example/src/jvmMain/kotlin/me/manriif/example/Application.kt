@@ -6,19 +6,24 @@ import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import me.manriif.jcef.Cef
+import me.manriif.jcef.initOnBackgroundThread
 
 const val PROJECT_GITHUB_PAGE = "https://github.com/Manriif/jcef-compose"
 
 fun cefApplication(
     title: State<String>,
     content: @Composable FrameWindowScope.() -> Unit
-) = application {
-    Window(
-        onCloseRequest = {
-            Cef.dispose()
-            exitApplication()
-        },
-        title = title.value,
-        content = content
-    )
+) {
+    Cef.initOnBackgroundThread()
+
+    application {
+        Window(
+            onCloseRequest = {
+                Cef.dispose()
+                exitApplication()
+            },
+            title = title.value,
+            content = content
+        )
+    }
 }

@@ -23,20 +23,32 @@ TODO
 
 ## How to use
 
-Simple example.
+Simple example:
 
-```kotlin 
-fun main() = singleWindowApplication(title = "Jcef compose") {
-    CefBrowser(
-        url = remember { "https://github.com/Manriif/jcef-compose" },
-        window = window,
-        onClientAvailable = { cefClient ->
-            configureClient(cefClient)
-        },
-        onBrowserAvailable = { cefBrowser ->
-            configureBrowser(cefBrowser)
+```kotlin
+fun main() {
+    Cef.init() // or Cef.initOnBackgroundThread()
+
+    application {
+        Window(
+            title = remember { "Jcef compose" },
+            onCloseRequest = {
+                Cef.dispose() // release Cef
+                exitApplication()
+            }
+        ) {
+            CefBrowser(
+                url = remember { "https://github.com/Manriif/jcef-compose" },
+                window = window,
+                onClientAvailable = { cefClient ->
+                    configureClient(cefClient)
+                },
+                onBrowserAvailable = { cefBrowser ->
+                    configureBrowser(cefBrowser)
+                }
+            )
         }
-    )
+    }
 }
 ```
 
