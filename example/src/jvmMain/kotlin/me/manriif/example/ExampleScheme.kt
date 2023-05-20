@@ -46,8 +46,7 @@ fun localSite(
 
 /**
  * Register the custom scheme [EXAMPLE_SCHEME_NAME] to [Cef]
- *
- * This function must be called before first call to [Cef.newClient].
+ * This method must be called before [Cef] initialization.
  */
 fun registerExampleScheme() {
     Cef.registerCustomScheme(
@@ -68,7 +67,6 @@ private fun FileResource.exampleSchemeUrl() = FILE_URL_FORMAT.format(filePath)
 
 /**
  * Create and return an url for the [LocalSite].
- *
  * The returned url must be used as [CefBrowser] initial url.
  */
 fun LocalSite.exampleSchemeUrl(): String = mainResource.exampleSchemeUrl()

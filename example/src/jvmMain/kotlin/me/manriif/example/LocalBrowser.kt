@@ -42,7 +42,7 @@ private const val URL_TAG = "URL"
 ///////////////////////////////////////////////////////////////////////////
 
 /**
- * Window that will render local HTML file and permits JS interaction through [CefBrowserCompose].
+ * Render local HTML file.
  */
 fun localAwtBrowser() = helloWorldApplication(HELLO_WORLD_AWT) { helloWorldSite ->
     Box(modifier = Modifier.fillMaxSize()) {
@@ -60,7 +60,7 @@ fun localAwtBrowser() = helloWorldApplication(HELLO_WORLD_AWT) { helloWorldSite 
 ///////////////////////////////////////////////////////////////////////////
 
 /**
- * Window that will render local HTML file through [CefBrowserAwt].
+ * Render local HTML file and permits JS interaction through [CefBrowserCompose].
  */
 fun localComposeBrowser() = helloWorldApplication(HELLO_WORLD_COMPOSE) { helloWorldSite ->
     Box(modifier = Modifier.fillMaxSize()) {

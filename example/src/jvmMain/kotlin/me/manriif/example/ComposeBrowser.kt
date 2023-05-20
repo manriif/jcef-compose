@@ -49,7 +49,7 @@ private class BrowserState {
 }
 
 /**
- * Window that will display [CefBrowserCompose] and a [BottomBar] to interact with the [CefBrowserCompose].
+ * Display a [CefBrowserCompose] and a [BottomBar] to interact with the [CefBrowserCompose].
  */
 fun composeBrowser() {
     val title = mutableStateOf("Compose Browser")

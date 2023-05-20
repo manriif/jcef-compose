@@ -9,7 +9,7 @@ import org.cef.browser.CefBrowser
 import org.cef.handler.CefDisplayHandlerAdapter
 
 /**
- * Awt browser window.
+ * Awt browser.
  */
 fun awtBrowser() {
     val title = mutableStateOf("Awt Browser")
