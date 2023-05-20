@@ -1,0 +1,25 @@
+<!-- https://codepen.io/vickimurley/pen/LYXRwo -->
+
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Index</title>
+    <link rel="stylesheet" href="hello-world.css">
+    <script type="text/javascript" src="hello-world.js"></script>
+</head>
+<body onload="init();">
+<div id="main">
+    <div id="title">H-E-L-L-O WORLD Animation</div>
+    <div class="button" onclick="resetTransitions();">Reset Transitions</div>
+    <div class="button" onclick="startTransitions();">Start Transitions</div>
+
+    <div class="hello" onwebkittransitionend="checkLetter();">
+        <span class="first letter offscreen">H</span><span class="letter offscreen">E</span><span class="letter offscreen">L</span><span class="letter offscreen">L</span><span class="letter offscreen">O</span>
+    </div>
+
+    <div class="world offscreen">WORLD</div>
+</div> <!-- end main -->
+<a id="codepen" href="https://codepen.io/vickimurley/pen/LYXRwo">Codepen</a>
+</body>
+</html>

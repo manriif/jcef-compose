@@ -1,0 +1,15 @@
+[versions]
+
+compose = "1.4.0"
+idea-ext = "1.1.7"
+jcefmaven = "110.0.25"
+kotlin = "1.8.20"
+kotlinx-coroutines = "1.6.4"
+
+[libraries]
+
+compose-gradle = { module = "org.jetbrains.compose:compose-gradle-plugin", version.ref = "compose" }
+idea-ext-gradle = { module = "gradle.plugin.org.jetbrains.gradle.plugin.idea-ext:gradle-idea-ext", version.ref = "idea-ext" }
+jcefmaven = { module = "me.friwi:jcefmaven", version.ref = "jcefmaven" }
+kotlin-gradle = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
