@@ -166,14 +166,14 @@ object Cef {
      *  in [CefApp.N_Initialize].
      *  As a result, an [ApplicationRestartRequiredException] will be thrown on each call
      *  to [newClient].
-     *  Application restart can be achieved in [onRestartRequest].
+     *  Application restart can be achieved in [onRestartRequired].
      *
      * @throws IllegalStateException if [dispose] was called
      */
     @Throws(IllegalStateException::class)
     fun initAsync(
         onError: ((Throwable) -> Unit)? = null,
-        onRestartRequest: (() -> Unit)? = null
+        onRestartRequired: (() -> Unit)? = null
     ) {
         val installDir = this.installDir
         val builder = getInitBuilder(installDir) ?: return
@@ -200,7 +200,7 @@ object Cef {
                 val exception = ApplicationRestartRequiredException("Application needs to restart.")
 
                 setInitResult(Result.failure(exception))
-                onRestartRequest?.invoke()
+                onRestartRequired?.invoke()
             }
         }
     }
