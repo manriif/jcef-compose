@@ -5,38 +5,35 @@ package me.manriif.jcef
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
+import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
-import me.friwi.jcefmaven.CefAppBuilder
 import me.friwi.jcefmaven.EnumProgress
 import me.friwi.jcefmaven.IProgressHandler
-import org.cef.CefApp
 import org.cef.CefClient
 import org.cef.browser.CefBrowser
 
 /**
- * Implement this interface to get notified about [CefApp] initialization progress.
+ * Implement this interface to get notified about [Cef] initialization progress.
  */
 @Stable
 interface BrowserInitState {
@@ -44,83 +41,130 @@ interface BrowserInitState {
     val progress: Float
 }
 
+@Stable
+private class BrowserInitStateImpl : BrowserInitState, IProgressHandler {
+
+    override var progress: Float by mutableStateOf(EnumProgress.NO_ESTIMATION)
+        private set
+
+    override var step: EnumProgress by mutableStateOf(EnumProgress.LOCATING)
+        private set
+
+    override fun handleProgress(state: EnumProgress, percent: Float) {
+        progress = percent
+        step = state
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Awt
+///////////////////////////////////////////////////////////////////////////
+
 /**
  * Create a [CefClient] in order to obtain a [CefBrowser] and then display it's content.
  *
  * The callbacks [onClientAvailable] and [onBrowserAvailable] will be called respectively after
  * [CefClient] and [CefBrowser] are instantiated.
  *
- * Before the [CefBrowser] content is rendered, [initContent] will be displayed and remains visible
- * until the [CefApp] is successfully initialized. If [CefApp] initialization fails, [errorContent]
- * will replace [initContent].
+ * Before the [CefBrowser] content is rendered, [initContent] will be displayed and remains
+ * visible until the [Cef] is successfully initialized.
+ * If [Cef] initialization fails, [errorContent] will replace [initContent].
  *
- * @see [CefAppBuilder.build] for possible [errorContent] parameter value.
+ * @see [Cef.newClient] for possible [errorContent] parameter value types.
  */
 @Composable
-fun CefBrowser(
+fun CefBrowserAwt(
     url: String,
-    window: ComposeWindow,
+    osr: Boolean = false,
+    transparent: Boolean = false,
+    modifier: Modifier = Modifier.fillMaxSize(),
     onClientAvailable: (suspend (CefClient) -> Unit)? = null,
     onBrowserAvailable: (suspend (CefBrowser) -> Unit)? = null,
-    modifier: Modifier = Modifier,
-    errorContent: @Composable (Throwable) -> Unit = remember {
-        { CefInitErrorContent(it) }
-    },
-    initContent: @Composable (BrowserInitState) -> Unit = remember {
-        { CefInitProgressContent(it) }
-    },
+    errorContent: @Composable (Throwable) -> Unit,
+    initContent: @Composable (BrowserInitState) -> Unit,
 ) {
-    val browserCallback by rememberUpdatedState(onBrowserAvailable)
-    val clientCallback by rememberUpdatedState(onClientAvailable)
-    val targetUrl = rememberUpdatedState(url)
-    val targetWindow = rememberUpdatedState(window)
-    val client = remember { mutableStateOf<CefClient?>(null) }
-    val error = remember { mutableStateOf<Throwable?>(null) }
-    val wrapper = remember { mutableStateOf<CefBrowserWrapper?>(null) }
-    val initState = remember { BrowserInitStateImpl() }
+    val useOsr = rememberUpdatedState(osr)
+    val useTransparent = rememberUpdatedState(transparent)
 
-    wrapper.value?.let { CefBrowser(it, modifier) }
-        ?: error.value?.let { errorContent(it) }
-        ?: initContent(initState)
-
-    client.value?.let { instance ->
-        DisposableEffect(Unit) {
-            wrapper.value = CefBrowserWrapper(targetWindow.value, instance, targetUrl.value)
-            onDispose { instance.dispose() }
-        }
-
-        LaunchedEffect(clientCallback) {
-            clientCallback?.invoke(instance)
-        }
+    val holder = rememberBrowserHolder(url, onClientAvailable, onBrowserAvailable) { client, url ->
+        CefBrowserAwtWrapper(client, url, useOsr.value, useTransparent.value)
     }
 
-    wrapper.value?.let { instance ->
-        LaunchedEffect(browserCallback) {
-            browserCallback?.invoke(instance.browser)
-        }
-    }
+    holder.wrapper?.let { CefBrowserAwt(it, Color.Transparent, modifier) }
+        ?: holder.error?.let { errorContent(it) }
+        ?: initContent(holder.initState)
 
     LaunchedEffect(Unit) {
-        snapshotFlow { targetUrl.value }.drop(1).onEach { url ->
-            wrapper.value?.browser?.loadURL(url)
-        }.launchIn(this)
-
-        snapshotFlow { targetWindow.value }.drop(1).onEach { window ->
-            client.value?.let { client ->
-                wrapper.value = CefBrowserWrapper(window, client, targetUrl.value)
-            }
-        }.launchIn(this)
-
-        runCatching { client.value = Cef.newClient(initState) }.exceptionOrNull()
-            ?.let(error::value::set)
+        snapshotFlow { useTransparent.value }.updateWrapperOnChange(holder, this)
+        snapshotFlow { useOsr.value }.updateWrapperOnChange(holder, this)
     }
 }
 
 /**
- * Render the [wrapper] content into [Canvas] and notify it about ui events.
+ * Display the [wrapper] content into [SwingPanel].
  */
 @Composable
-fun CefBrowser(wrapper: CefBrowserWrapper, modifier: Modifier = Modifier) {
+fun CefBrowserAwt(
+    wrapper: CefBrowserAwtWrapper,
+    background: Color = Color.Transparent,
+    modifier: Modifier = Modifier
+) {
+    SwingPanel(
+        background = background,
+        modifier = modifier,
+        factory = { wrapper.browser.uiComponent },
+    )
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Compose
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * Create a [CefClient] in order to obtain a [CefBrowserCompose] and then display it's content.
+ *
+ * The callbacks [onClientAvailable] and [onBrowserAvailable] will be called respectively after
+ * [CefClient] and [CefBrowser] are instantiated.
+ *
+ * Before the [CefBrowserCompose] content is rendered, [initContent] will be displayed and remains
+ * visible until the [Cef] is successfully initialized.
+ * If [Cef] initialization fails, [errorContent] will replace [initContent].
+ *
+ * @see [Cef.newClient] for possible [errorContent] parameter value types.
+ */
+@Composable
+fun CefBrowserCompose(
+    url: String,
+    window: ComposeWindow,
+    modifier: Modifier = Modifier,
+    onClientAvailable: (suspend (CefClient) -> Unit)? = null,
+    onBrowserAvailable: (suspend (CefBrowser) -> Unit)? = null,
+    errorContent: @Composable (Throwable) -> Unit,
+    initContent: @Composable (BrowserInitState) -> Unit,
+) {
+    val targetWindow = rememberUpdatedState(window)
+
+    val holder = rememberBrowserHolder(url, onClientAvailable, onBrowserAvailable) { client, url ->
+        CefBrowserComposeWrapper(targetWindow.value, client, url)
+    }
+
+    holder.wrapper?.let { CefBrowserCompose(it, modifier) }
+        ?: holder.error?.let { errorContent(it) }
+        ?: initContent(holder.initState)
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { targetWindow.value }.updateWrapperOnChange(holder, this)
+    }
+}
+
+/**
+ * Display the [wrapper] content into [Canvas] and notify it about ui events.
+ */
+@Composable
+fun CefBrowserCompose(
+    wrapper: CefBrowserComposeWrapper,
+    modifier: Modifier = Modifier
+) {
     val focusRequester = remember { FocusRequester() }
 
     Canvas(Modifier
@@ -158,70 +202,75 @@ fun CefBrowser(wrapper: CefBrowserWrapper, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Init content example.
- */
+///////////////////////////////////////////////////////////////////////////
+// Common
+///////////////////////////////////////////////////////////////////////////
+
 @Composable
-private fun CefInitProgressContent(state: BrowserInitState) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                modifier = Modifier.padding(bottom = 8.dp),
-                text = when (state.step) {
-                    EnumProgress.LOCATING -> "Locating JCEF native bundle"
-                    EnumProgress.EXTRACTING -> "Extracting JCEF native bundle"
+private fun <W : CefBrowserWrapper> rememberBrowserHolder(
+    url: String,
+    onClientAvailable: (suspend (CefClient) -> Unit)?,
+    onBrowserAvailable: (suspend (CefBrowser) -> Unit)?,
+    onCreateWrapper: (CefClient, String) -> W
+): CefClientHolder<W> {
+    val targetUrl = rememberUpdatedState(url)
+    val holder = remember { CefClientHolder(targetUrl, onCreateWrapper) }
+    val browserCallback by rememberUpdatedState(onBrowserAvailable)
+    val clientCallback by rememberUpdatedState(onClientAvailable)
 
-                    EnumProgress.DOWNLOADING -> when (val progress = state.progress) {
-                        EnumProgress.NO_ESTIMATION -> "Downloading JCEF native bundle"
-                        in 0f..100f -> "Downloading JCEF native bundle: ${progress.toInt()}%"
-                        else -> throw IllegalStateException("Unexpected progress value")
-                    }
+    holder.client?.let { instance ->
+        DisposableEffect(Unit) {
+            holder.wrapper = onCreateWrapper(instance, targetUrl.value)
+            onDispose { instance.dispose() }
+        }
 
-                    EnumProgress.INSTALL -> "Installing JCEF native bundle"
-                    EnumProgress.INITIALIZING -> "Initializing JCEF"
-                    EnumProgress.INITIALIZED -> "JCEF successfully initialized"
-                }
-            )
-
-            if (state.step == EnumProgress.DOWNLOADING && state.progress >= 0f) {
-                LinearProgressIndicator(state.progress / 100f, Modifier.fillMaxWidth(.5f))
-            } else {
-                LinearProgressIndicator(Modifier.fillMaxWidth(.5f))
-            }
+        LaunchedEffect(clientCallback) {
+            clientCallback?.invoke(instance)
         }
     }
+
+    holder.wrapper?.let { instance ->
+        LaunchedEffect(browserCallback) {
+            browserCallback?.invoke(instance.browser)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { targetUrl.value }.drop(1).onEach { url ->
+            holder.wrapper?.browser?.loadURL(url)
+        }.launchIn(this)
+
+        try {
+            holder.client = Cef.newClient(holder.initState)
+        } catch (throwable: Throwable) {
+            holder.error = throwable
+        }
+    }
+
+    return holder
 }
 
-/**
- * Error content example.
- */
-@Composable
-private fun CefInitErrorContent(throwable: Throwable) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = "Failed to initialize cef: ${throwable.message}")
+private fun <W : CefBrowserWrapper, T> Flow<T>.updateWrapperOnChange(
+    holder: CefClientHolder<W>,
+    scope: CoroutineScope,
+    drop: Int = 1
+) {
+    val flow = if (drop > 0) this.drop(drop) else this
+
+    flow.onEach {
+        holder.client?.let { client ->
+            holder.wrapper = holder.onCreateWrapper(client, holder.url.value)
         }
-    }
+    }.launchIn(scope)
 }
 
 @Stable
-private class BrowserInitStateImpl : BrowserInitState, IProgressHandler {
-
-    override var progress: Float by mutableStateOf(EnumProgress.NO_ESTIMATION)
-        private set
-
-    override var step: EnumProgress by mutableStateOf(EnumProgress.LOCATING)
-        private set
-
-    override fun handleProgress(state: EnumProgress, percent: Float) {
-        progress = percent
-        step = state
-    }
+private class CefClientHolder<W>(
+    val url: State<String>,
+    val onCreateWrapper: (CefClient, String) -> W
+) {
+    val initState = BrowserInitStateImpl()
+    var client: CefClient? by mutableStateOf(null)
+    var error: Throwable? by mutableStateOf(null)
+    var wrapper: W? by mutableStateOf(null)
 }

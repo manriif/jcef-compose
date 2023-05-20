@@ -19,25 +19,25 @@ Despite the fact that the OSR renderer does not highlight the power of CEF, this
 
 ## Installation
 
-TODO
+Coming soon
 
 ## How to use
 
-Simple example:
+Synchronous [`Cef`](jcef/src/jvmMain/kotlin/me/manriif/jcef/Cef.kt) initialization example:
 
 ```kotlin
 fun main() {
-    Cef.init() // or Cef.initOnBackgroundThread()
+    Cef.initSync() // Will block the current thread and download the native bundle
 
     application {
         Window(
             title = remember { "Jcef compose" },
             onCloseRequest = {
-                Cef.dispose() // release Cef
+                Cef.dispose() // dispose Cef
                 exitApplication()
             }
         ) {
-            CefBrowser(
+            CefBrowserCompose(
                 url = remember { "https://github.com/Manriif/jcef-compose" },
                 window = window,
                 onClientAvailable = { cefClient ->
@@ -52,20 +52,23 @@ fun main() {
 }
 ```
 
-Other ready to run examples are available [here](example).\
+For
+
+Ready to run examples are available [here](example/src/jvmMain/kotlin/me/manriif/example).\
 These examples can be run on IntelliJ through run configurations.
 
 <img src="readme/run_configurations.png" alt="run / debug configurations" height="200px">
 
 Or as gradle tasks in the terminal:
 
-* `./gradlew simple-browser`, minimal code to display a `CefBrowser`.
-* `./gradlew advanced-browser`, a browser window with a composable bottom bar that interact with `CefBrowser`.
-* `./gradlew local-browser`, render local HTML with CSS and JS files and display composable buttons that allow execution of JavaScript code through `CefBrowser`.
+* `./gradlew awt-browser`, example usage of [`CefBrowserAwt`](jcef/src/jvmMain/kotlin/me/manriif/jcef/CefBrowser.kt).
+* `./gradlew compose-browser`, example usage of [`CefBrowserCompose`](jcef/src/jvmMain/kotlin/me/manriif/jcef/CefBrowser.kt).
+* `./gradlew local-awt-browser`, example usage of [`CefBrowserAwt`](jcef/src/jvmMain/kotlin/me/manriif/jcef/CefBrowser.kt) with local HTML, CSS and JS files.
+* `./gradlew local-compose-browser`, example usage of [`CefBrowserCompose`](jcef/src/jvmMain/kotlin/me/manriif/jcef/CefBrowser.kt) with local HTML, CSS and JS files.
 
 ## Limitations
 
-Jcef limitations applies to this project, see:
+Jcef limitations apply to this project, see:
 
 * [java-cef](https://github.com/chromiumembedded/java-cef/#readme)
 * [jcefmaven](https://github.com/jcefmaven/jcefmaven#readme) 

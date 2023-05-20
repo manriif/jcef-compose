@@ -12,9 +12,10 @@ dependencies {
 }
 
 listOf(
-    "advanced-browser",
-    "local-browser",
-    "simple-browser",
+    "awt-browser",
+    "compose-browser",
+    "local-awt-browser",
+    "local-compose-browser"
 ).forEach { exampleName ->
     val task = tasks.create<JavaExec>(exampleName) {
         mainClass.set("me.manriif.example.MainKt")

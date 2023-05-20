@@ -25,7 +25,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.unit.dp
-import me.manriif.jcef.CefBrowser
+import me.manriif.jcef.CefBrowserCompose
 import org.cef.CefClient
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
@@ -49,21 +49,23 @@ private class BrowserState {
 }
 
 /**
- * Window that will display [CefBrowser] and a [BottomBar] to interact with the [CefBrowser].
+ * Window that will display [CefBrowserCompose] and a [BottomBar] to interact with the [CefBrowserCompose].
  */
-fun advancedBrowser() {
-    val title = mutableStateOf("Advanced Browser")
+fun composeBrowser() {
+    val title = mutableStateOf("Compose Browser")
 
     cefApplication(title) {
         MaterialTheme {
             Box(modifier = Modifier.fillMaxSize()) {
                 val state = remember { BrowserState() }
 
-                CefBrowser(
+                CefBrowserCompose(
                     url = state.url,
                     window = window,
                     onBrowserAvailable = state::browser::set,
-                    onClientAvailable = { it.configure(state, title) }
+                    onClientAvailable = { it.configure(state, title) },
+                    errorContent = { CefInitErrorContent(it) },
+                    initContent = { CefInitProgressContent(it) }
                 )
 
                 AnimatedVisibility(

@@ -1,14 +1,15 @@
 package me.manriif.example
 
 private enum class Example(runnable: Runnable) : Runnable by runnable {
-    AdvancedBrowser(::advancedBrowser),
-    SimpleBrowser(::simpleBrowser),
-    LocalBrowser(::localBrowser)
+    AwtBrowser(::awtBrowser),
+    ComposeBrowser(::composeBrowser),
+    LocalAwtBrowser(::localAwtBrowser),
+    LocalComposeBrowser(::localComposeBrowser)
 }
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        return Example.SimpleBrowser.run()
+        return Example.AwtBrowser.run()
     }
 
     val arg = args[0]

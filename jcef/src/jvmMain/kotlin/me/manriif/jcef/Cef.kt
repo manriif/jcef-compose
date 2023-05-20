@@ -1,24 +1,36 @@
 package me.manriif.jcef
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import me.friwi.jcefmaven.*
 import me.friwi.jcefmaven.impl.progress.ConsoleProgressHandler
+import me.friwi.jcefmaven.impl.step.check.CefInstallationChecker
 import org.cef.CefApp
 import org.cef.CefClient
 import org.cef.callback.CefSchemeHandlerFactory
 import org.cef.callback.CefSchemeRegistrar
 import org.cef.handler.CefAppHandler
+import java.io.File
 import java.io.IOException
-import kotlin.concurrent.thread
+import kotlin.coroutines.EmptyCoroutineContext
+
+/**
+ * The application needs to be restarted in order to avoid random crash on some platform.
+ * This exception is only thrown after an asynchronous installation.
+ */
+class ApplicationRestartRequiredException(message: String) : Exception(message)
 
 /**
  * Implement this interface to configure [CefAppBuilder].
  *
- * [CefAppBuilder.setAppHandler] and [CefAppBuilder.setProgressHandler] will be replaced so use
- * [Cef.appHandlerAdapter] and [Cef.progressHandler] respectively.
+ * Some methods of [CefAppBuilder] will be called internally and may erase user defined values,
+ * prefer below replacements:
+ *
+ * [CefAppBuilder.setProgressHandler] => [Cef.progressHandler]
+ * [CefAppBuilder.setAppHandler] => [Cef.appHandlerAdapter]
+ * [CefAppBuilder.setInstallDir] => [Cef.installDir]
  */
 fun interface CefAppBuilderConfigurator {
     fun CefAppBuilder.configure()
@@ -45,25 +57,24 @@ private enum class State {
     New,
     Initializing,
     Initialized,
+    Error, // Used in case of asynchronous init
     Disposed
 }
 
 /**
  * Wrapper around [CefApp] and [CefAppBuilder].
  *
- * Note that first call to [Cef.newClient] will trigger [CefAppBuilder.build] and [CefApp]
- * initialization, thus, all properties such as [Cef.appHandlerAdapter] and methods
+ * Note that call to [Cef.initSync] or [Cef.initAsync] will trigger [CefAppBuilder.build]
+ * and [CefApp] initialization, thus, all properties such as [Cef.appHandlerAdapter] and methods
  * such as [Cef.registerCustomScheme] must be set/called before that call.
  *
  * @author Maanrifa Bacar Ali
  */
 object Cef {
 
-    private var state = State.New
-    private val stateLock = Any()
-
-    private var cefAppInstanceFlow = MutableStateFlow<CefApp?>(null)
-    private val cefAppLock = Any()
+    private val state = MutableStateFlow(State.New)
+    private var cefInitError: Throwable? = null
+    private var cefAppInstance: CefApp? = null
 
     private val schemeHandlers = mutableSetOf<SchemeHandler>()
     private val customSchemes = mutableSetOf<CustomScheme>()
@@ -76,23 +87,54 @@ object Cef {
     var appHandlerAdapter: MavenCefAppHandlerAdapter? = null
     var builderConfigurator: CefAppBuilderConfigurator? = null
     var progressHandler: IProgressHandler? = null
+    var installDir: File = File("jcef-bundle")
+
+    private val cefApp: CefApp
+        get() = checkNotNull(cefAppInstance) { "CefApp must not be null." }
 
     ///////////////////////////////////////////////////////////////////////////
     // Lifespan
     ///////////////////////////////////////////////////////////////////////////
 
     /**
-     * Initialize the [CefApp] instance, downloading native bundle if required.
-     * If non-null, [onBuildStarted] will be invoked before [CefAppBuilder.build].
-     * The calling thread may be blocked during the initialization process.
-     * This method is thread-safe and can be called multiple time.
+     * Dispose the [CefApp] if it was created.
+     * If [initAsync] was called, this method will wait for initialization to finish.
+     */
+    fun dispose() {
+        when (state.value) {
+            State.New, State.Disposed, State.Error -> return
+            State.Initializing -> {
+                runBlocking {
+                    state.first { it != State.Initializing }
+                }
+
+                return dispose()
+            }
+
+            State.Initialized -> {
+                state.value = State.Disposed
+                cefApp.dispose()
+                cefAppInstance = null
+            }
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // Init
+    ///////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Initialize the [cefAppInstance], downloading the native bundle if missing.
+     * The calling thread may be blocked for a long duration during the initialization process
+     * depending on network speed.
      *
-     * @throws IOException                  if an artifact could not be fetched or IO-actions
-     * on disk failed
+     * This method is thread-safe and can be called multiple times.
+     *
+     * @throws IOException if an artifact could not be fetched or IO-actions on disk failed
      * @throws UnsupportedPlatformException if the platform is not supported
-     * @throws InterruptedException         if the installation process got interrupted
-     * @throws CefInitializationException   if the initialization of JCef failed
-     * @throws IllegalStateException        if [dispose] was called
+     * @throws InterruptedException if the installation process got interrupted
+     * @throws CefInitializationException if the initialization of JCef failed
+     * @throws IllegalStateException if [dispose] was called
      */
     @Throws(
         IOException::class,
@@ -101,59 +143,125 @@ object Cef {
         CefInitializationException::class,
         IllegalStateException::class
     )
-    fun init(onBuildStarted: (() -> Unit)? = null) {
-        synchronized(stateLock) sync@{
-            when (state) {
-                State.Disposed -> illegalState("CefApp is disposed.")
-                State.Initializing, State.Initialized -> return@sync onBuildStarted?.invoke()
-                State.New -> state = State.Initializing
+    fun initSync() {
+        val builder = getInitBuilder(installDir) ?: return
+        val result = runCatching { builder.build() }
+
+        setInitResult(result)
+        result.exceptionOrNull()?.let { throw it }
+    }
+
+    /**
+     * Initialize the [cefAppInstance] in background, downloading native bundle if missing.
+     *
+     * The main purpose of this method is to prevent the main thread from being blocked
+     * when [CefAppBuilder.install] will start the native bundle download process.
+     * If an error occurs, it will be forwarded to [onError] if provided and thrown otherwise.
+     *
+     * This method is thread-safe and can be called multiple times.
+     *
+     * FIXME: [CefApp.createClient] crashes randomly after the native bundle have been downloaded
+     *  and [CefApp.getInstance] is not called within a certain time.
+     *  The cause of this issue (observed on macOS) remains unknown but it seems to occurs
+     *  in [CefApp.N_Initialize].
+     *  As a result, an [ApplicationRestartRequiredException] will be thrown on each call
+     *  to [newClient].
+     *  Application restart can be achieved in [onRestartRequest].
+     *
+     * @throws IllegalStateException if [dispose] was called
+     */
+    @Throws(IllegalStateException::class)
+    fun initAsync(
+        onError: ((Throwable) -> Unit)? = null,
+        onRestartRequest: (() -> Unit)? = null
+    ) {
+        val installDir = this.installDir
+        val builder = getInitBuilder(installDir) ?: return
+        val isInstallOk = CefInstallationChecker.checkInstallation(installDir)
+
+        if (isInstallOk) {
+            Dispatchers.Default.dispatch(EmptyCoroutineContext) {
+                val result = runCatching { builder.build() }
+                setInitResult(result)
+
+                result.exceptionOrNull()?.let { error ->
+                    onError?.invoke(error) ?: throw error
+                }
             }
-        }
+        } else {
+            Dispatchers.IO.dispatch(EmptyCoroutineContext) {
+                try {
+                    builder.install()
+                } catch (throwable: Throwable) {
+                    setInitResult(Result.failure(throwable))
+                    onError?.invoke(throwable) ?: throw throwable
+                }
 
-        synchronized(cefAppLock) {
-            val builder = CefAppBuilder().apply {
-                cefSettings.windowless_rendering_enabled = true
-            }
+                val exception = ApplicationRestartRequiredException("Application needs to restart.")
 
-            builderConfigurator?.run {
-                builder.configure()
-            }
-
-            with(builder) {
-                setProgressHandler(this@Cef::dispatchProgress)
-                setAppHandler(AppHandler)
-                onBuildStarted?.invoke()
-                cefAppInstanceFlow.value = build()
-            }
-
-            builderConfigurator = null
-            progressHandler = null
-
-            synchronized(stateLock) {
-                check(state == State.Initializing) { "Unexpected state." }
-                state = State.Initialized
+                setInitResult(Result.failure(exception))
+                onRestartRequest?.invoke()
             }
         }
     }
 
     /**
-     * Dispose the [CefApp] if it was created.
+     * Create, configure and return a [CefAppBuilder] instance or return null if [state] is
+     * [State.Initializing] or [State.Initialized].
      *
-     * This method is thread-safe and has no effect if [init] was not called or
-     * if [CefApp] is already disposed.
+     * [State.Error] behave the same as [State.New] and thus allow to retry initialization if it has
+     * previously failed.
+     *
+     * @throws IllegalStateException if [state] is [State.Disposed].
      */
-    fun dispose() {
-        synchronized(stateLock) {
-            if (state == State.New || state == State.Disposed) {
-                return@synchronized
-            }
+    @Throws(IllegalStateException::class)
+    private fun getInitBuilder(installDir: File): CefAppBuilder? {
+        val currentState = state.value
 
-            synchronized(cefAppLock) {
-                val instance = cefAppInstanceFlow.value ?: return
-                instance.dispose()
-                cefAppInstanceFlow.value = null
-                state = State.Disposed
-            }
+        when (currentState) {
+            State.Disposed -> illegalState("Cef is disposed.")
+            State.Initializing, State.Initialized -> return null
+            State.New, State.Error -> state.value = State.Initializing
+        }
+
+        if (currentState == State.Error) {
+            cefInitError = null
+        }
+
+        val builder = CefAppBuilder().apply {
+            cefSettings.windowless_rendering_enabled = true
+        }
+
+        builderConfigurator?.run {
+            builder.configure()
+        }
+
+        return builder.apply {
+            setProgressHandler(::dispatchProgress)
+            setAppHandler(AppHandler)
+            setInstallDir(installDir)
+        }
+    }
+
+    /**
+     * Update [state] according to [result].
+     * [Result.isSuccess] implies that [CefApp] successfully initialized and thus [state] will be
+     * [State.Initialized].
+     * Conversely, [Result.isFailure] will cause [state] to be [State.Error].
+     */
+    private fun setInitResult(result: Result<CefApp>) {
+        val nextState = if (result.isSuccess) {
+            cefAppInstance = result.getOrThrow()
+            builderConfigurator = null
+            progressHandler = null
+            State.Initialized
+        } else {
+            cefInitError = result.exceptionOrNull()
+            State.Error
+        }
+
+        check(state.compareAndSet(State.Initializing, nextState)) {
+            "State.Initializing was expected."
         }
     }
 
@@ -164,42 +272,50 @@ object Cef {
     /**
      * Obtain a new [CefClient] ang get notified about initialization progress if passing a
      * non-null [onProgress] instance.
-     * If an instance of [CefApp] could be obtained immediately, [onProgress] will be ignored.
+     * If an instance of [CefApp] can be obtained immediately, [onProgress] will be ignored.
      *
-     * @throws IllegalStateException if [init] was not called or [dispose] was called.
+     * @throws IOException if an artifact could not be fetched or IO-actions on disk failed
+     * @throws UnsupportedPlatformException if the platform is not supported
+     * @throws InterruptedException if the installation process got interrupted
+     * @throws CefInitializationException if the initialization of JCef failed
+     * @throws IllegalStateException if [Cef] was not initialized or [dispose] was called.
+     * @throws ApplicationRestartRequiredException if [initAsync] was called and the native bundle
+     * was downloaded
      */
-    @Throws(IllegalStateException::class)
+    @Throws(
+        IOException::class,
+        UnsupportedPlatformException::class,
+        InterruptedException::class,
+        CefInitializationException::class,
+        IllegalStateException::class,
+        ApplicationRestartRequiredException::class
+    )
     suspend fun newClient(onProgress: IProgressHandler? = null): CefClient {
-        synchronized(stateLock) {
-            if (state == State.New) {
-                illegalState("init() must be called before newClient().")
-            } else if (state == State.Disposed) {
-                illegalState("Could not create client after dispose() was called")
+        return when (state.value) {
+            State.New -> illegalState("Cef was not initialized.")
+            State.Disposed -> illegalState("Could not create client after dispose() was called")
+            State.Error -> throw checkNotNull(cefInitError) { "Error must not be null" }
+            State.Initialized -> cefApp.createClient()
+
+            State.Initializing -> {
+                val added = onProgress?.let { handler ->
+                    synchronized(progressLock) {
+                        handler.handleProgress(progressState, progressValue)
+                        progressHandlers.add(handler)
+                    }
+                }
+
+                state.first { it != State.Initializing }
+
+                if (added == true) {
+                    synchronized(progressLock) {
+                        progressHandlers.remove(onProgress)
+                    }
+                }
+
+                return newClient(onProgress)
             }
         }
-
-        var cefApp = cefAppInstanceFlow.value
-
-        if (cefApp != null) {
-            return cefApp.createClient()
-        }
-
-        val added = onProgress?.let { handler ->
-            synchronized(progressLock) {
-                handler.handleProgress(progressState, progressValue)
-                progressHandlers.add(handler)
-            }
-        }
-
-        cefApp = cefAppInstanceFlow.filterNotNull().first()
-
-        if (added == true) {
-            synchronized(progressLock) {
-                progressHandlers.remove(onProgress)
-            }
-        }
-
-        return cefApp.createClient()
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -207,7 +323,7 @@ object Cef {
     ///////////////////////////////////////////////////////////////////////////
 
     /**
-     * Dispatch progress [state] and [value] to [progressHandler] and [progressHandlers]
+     * Dispatch progress [state] and [value] to [progressHandler] and [progressHandlers].
      */
     private fun dispatchProgress(state: EnumProgress, value: Float) = synchronized(progressLock) {
         progressState = state
@@ -227,10 +343,11 @@ object Cef {
     /**
      * Register a custom scheme.
      *
-     * This method must be called before [init] after which it will no longer be possible to
-     * register a custom scheme.
+     * This method must be called before [initSync] or [initAsync] after which it will no longer be
+     * possible to register a custom scheme.
      *
      * @see [CefSchemeRegistrar.addCustomScheme]
+     *
      * @throws IllegalStateException if [CefApp] is initialized or disposed.
      */
     @Throws(IllegalStateException::class)
@@ -266,11 +383,12 @@ object Cef {
 
     /**
      * Register a [CefSchemeHandlerFactory] for [schemeName].
-     * The [factory] will be instantiated on [CefAppHandler.onContextInitialized]
+     * The [factory] will be instantiated in [CefAppHandler.onContextInitialized].
      *
-     * This method must be called before [init].
+     * This method must be called before [initSync] or [initAsync].
      *
      * @see CefSchemeHandlerFactory
+     *
      * @throws IllegalStateException if [CefApp] is initialized or disposed.
      */
     @Throws(IllegalStateException::class)
@@ -284,16 +402,14 @@ object Cef {
     }
 
     private inline fun ensureIsNew(lazyAction: () -> String) {
-        synchronized(stateLock) {
-            when (state) {
-                State.New -> return
+        when (state.value) {
+            State.New, State.Error -> return
 
-                State.Initializing, State.Initialized ->
-                    illegalState("Could not ${lazyAction()} after CefApp started initializing.")
+            State.Initializing, State.Initialized ->
+                illegalState("Could not ${lazyAction()} after CefApp started initializing.")
 
-                State.Disposed ->
-                    illegalState("Could not ${lazyAction()} after CefApp is disposed.")
-            }
+            State.Disposed ->
+                illegalState("Could not ${lazyAction()} after CefApp is disposed.")
         }
     }
 
@@ -335,12 +451,8 @@ object Cef {
             super.onContextInitialized()
             appHandlerAdapter?.onContextInitialized()
 
-            val instance = checkNotNull(cefAppInstanceFlow.value) {
-                "CefApp instance must not be null."
-            }
-
             schemeHandlers.onEach { handler ->
-                instance.registerSchemeHandlerFactory(
+                cefApp.registerSchemeHandlerFactory(
                     /* schemeName = */ handler.schemeName,
                     /* domainName = */ handler.domainName,
                     /* factory = */ handler.factory()
@@ -362,39 +474,5 @@ object Cef {
             super.stateHasChanged(state)
             appHandlerAdapter?.stateHasChanged(state)
         }
-    }
-}
-
-/**
- * Call [Cef.init] in a background thread.
- *
- * The main purpose of this method is to prevent the main thread from being blocked
- * when [CefAppBuilder.install] will start the native bundle download process. If an error occurs,
- * it will be forwarded to [onError] if provided and thrown otherwise.
- *
- * This method will return after the background thread successfully calls [Cef.init].
- *
- * FIXME: [CefApp.createClient] crashes randomly if the native bundle needs to be downloaded and
- * [CefApp.getInstance] is not called within a certain time.
- * The cause of this issue remains unknown but it's seems to occur in [CefApp.N_Initialize].
- *
- * @author Maanrifa Bacar Ali
- */
-fun Cef.initOnBackgroundThread(
-    threadName: String = "CefBackgroundInit",
-    onError: ((Throwable) -> Unit)? = null
-) {
-    val buildStarted = MutableStateFlow(false)
-
-    thread(name = threadName) {
-        try {
-            init { buildStarted.value = true }
-        } catch (error: Throwable) {
-            onError?.invoke(error) ?: throw error
-        }
-    }
-
-    runBlocking {
-        buildStarted.first { it }
     }
 }

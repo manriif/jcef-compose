@@ -10,7 +10,7 @@ import java.util.concurrent.locks.ReentrantLock
 /**
  * This renderer is too slow, especially on HiDPI display, it should be replaced.
  */
-internal class OsrBitmapRenderer {
+internal class BitmapRenderer {
 
     private var bitmap: Bitmap? = null
     private var bitmapPixels: ByteArray? = null

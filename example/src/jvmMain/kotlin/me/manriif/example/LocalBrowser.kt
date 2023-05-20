@@ -25,55 +25,68 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import me.manriif.jcef.CefBrowser
+import androidx.compose.ui.window.FrameWindowScope
+import me.manriif.jcef.CefBrowserAwt
+import me.manriif.jcef.CefBrowserCompose
 import org.cef.CefClient
 import org.cef.browser.CefBrowser
 import org.cef.handler.CefLifeSpanHandlerAdapter
 import org.cef.handler.CefLoadHandlerAdapter
 
-private const val HELLO_WORLD = "hello-world"
+private const val HELLO_WORLD_AWT = "awt/hello-world"
+private const val HELLO_WORLD_COMPOSE = "compose/hello-world"
 private const val URL_TAG = "URL"
 
+///////////////////////////////////////////////////////////////////////////
+// Awt
+///////////////////////////////////////////////////////////////////////////
+
 /**
- * Window that will render local HTML file and permits JS interaction through [CefBrowser].
+ * Window that will render local HTML file and permits JS interaction through [CefBrowserCompose].
  */
-fun localBrowser() {
-    registerExampleScheme()
+fun localAwtBrowser() = helloWorldApplication(HELLO_WORLD_AWT) { helloWorldSite ->
+    Box(modifier = Modifier.fillMaxSize()) {
+        CefBrowserAwt(
+            url = remember { helloWorldSite.exampleSchemeUrl() },
+            onClientAvailable = { it.configure(helloWorldSite) },
+            errorContent = { CefInitErrorContent(it) },
+            initContent = { CefInitProgressContent(it) }
+        )
+    }
+}
 
-    val classLoader = FileResource::class.java.classLoader!!
+///////////////////////////////////////////////////////////////////////////
+// Compose
+///////////////////////////////////////////////////////////////////////////
 
-    val helloWorldSite = localSite(
-        FileResource(classLoader, "$HELLO_WORLD.html", "text/html"),
-        FileResource(classLoader, "$HELLO_WORLD.css", "text/css"),
-        FileResource(classLoader, "$HELLO_WORLD.js", "text/javascript")
-    )
+/**
+ * Window that will render local HTML file through [CefBrowserAwt].
+ */
+fun localComposeBrowser() = helloWorldApplication(HELLO_WORLD_COMPOSE) { helloWorldSite ->
+    Box(modifier = Modifier.fillMaxSize()) {
+        val browserRef = remember { Ref<CefBrowser>() }
+        val isBrowserReady = remember { mutableStateOf(false) }
 
-    cefApplication(mutableStateOf("Local Browser")) {
-        MaterialTheme {
-            Box(modifier = Modifier.fillMaxSize()) {
-                val browserRef = remember { Ref<CefBrowser>() }
-                val isBrowserReady = remember { mutableStateOf(false) }
+        CefBrowserCompose(
+            url = remember { helloWorldSite.exampleSchemeUrl() },
+            window = window,
+            onClientAvailable = { it.configure(helloWorldSite, isBrowserReady) },
+            onBrowserAvailable = { browserRef.value = it },
+            errorContent = { CefInitErrorContent(it) },
+            initContent = { CefInitProgressContent(it) }
+        )
 
-                CefBrowser(
-                    url = remember { helloWorldSite.exampleSchemeUrl() },
-                    window = window,
-                    onClientAvailable = { it.configure(helloWorldSite, isBrowserReady) },
-                    onBrowserAvailable = { browserRef.value = it }
-                )
+        if (isBrowserReady.value) {
+            Row(
+                modifier = Modifier
+                    .padding(16.0.dp)
+                    .align(Alignment.BottomStart)
+            ) {
+                BrowserJsInteractionButtons(browserRef, isBrowserReady)
+            }
 
-                if (isBrowserReady.value) {
-                    Row(
-                        modifier = Modifier
-                            .padding(16.0.dp)
-                            .align(Alignment.BottomStart)
-                    ) {
-                        BrowserJsInteractionButtons(browserRef, isBrowserReady)
-                    }
-
-                    Box(modifier = Modifier.align(Alignment.BottomEnd)) {
-                        CodePenLink()
-                    }
-                }
+            Box(modifier = Modifier.align(Alignment.BottomEnd)) {
+                CodePenLink()
             }
         }
     }
@@ -108,15 +121,56 @@ private fun CodePenLink() {
         text = text,
         modifier = Modifier.padding(8.0.dp),
         onClick = { offset ->
-            val annotation = text.getStringAnnotations(offset, offset).first()
-            uriHandler.openUri(annotation.item)
+            text.getStringAnnotations(offset, offset).firstOrNull()?.let { annotation ->
+                uriHandler.openUri(annotation.item)
+            }
         }
     )
 }
 
+private fun codepenText() = buildAnnotatedString {
+    pushStringAnnotation(URL_TAG, "https://codepen.io/vickimurley/pen/LYXRwo")
+
+    val span = SpanStyle(
+        color = Color(0xff0000EE),
+        textDecoration = TextDecoration.Underline
+    )
+
+    withStyle(span) {
+        append("Codepen")
+    }
+
+    pop()
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Common
+///////////////////////////////////////////////////////////////////////////
+
+private fun helloWorldApplication(
+    path: String,
+    content: @Composable FrameWindowScope.(helloWorldSite: LocalSite) -> Unit
+) {
+    registerExampleScheme()
+
+    val classLoader = FileResource::class.java.classLoader!!
+
+    val helloWorldSite = localSite(
+        FileResource(classLoader, "$path.html", "text/html"),
+        FileResource(classLoader, "$path.css", "text/css"),
+        FileResource(classLoader, "$path.js", "text/javascript")
+    )
+
+    cefApplication(mutableStateOf("Local Browser")) {
+        MaterialTheme {
+            content(helloWorldSite)
+        }
+    }
+}
+
 private fun CefClient.configure(
     site: LocalSite,
-    isBrowserReady: MutableState<Boolean>
+    isBrowserReady: MutableState<Boolean>? = null
 ) {
     addLifeSpanHandler(object : CefLifeSpanHandlerAdapter() {
         override fun onAfterCreated(browser: CefBrowser) {
@@ -133,22 +187,7 @@ private fun CefClient.configure(
             canGoForward: Boolean
         ) {
             super.onLoadingStateChange(browser, isLoading, canGoBack, canGoForward)
-            isBrowserReady.value = !isLoading
+            isBrowserReady?.value = !isLoading
         }
     })
-}
-
-private fun codepenText() = buildAnnotatedString {
-    pushStringAnnotation(URL_TAG, "https://codepen.io/vickimurley/pen/LYXRwo")
-
-    val span = SpanStyle(
-        color = Color(0xff0000EE),
-        textDecoration = TextDecoration.Underline
-    )
-
-    withStyle(span) {
-        append("Codepen")
-    }
-
-    pop()
 }

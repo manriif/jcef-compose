@@ -7,27 +7,52 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInWindow
 import org.cef.CefClient
-import org.cef.browser.OsrCefBrowser
 import org.cef.browser.CefBrowser
+import org.cef.browser.CefRequestContext
+import org.cef.browser.CefBrowserCompose
 import org.jetbrains.skia.Image
 import java.awt.KeyboardFocusManager
 import java.awt.event.MouseEvent
 import java.awt.event.MouseWheelEvent
 
 /**
- * Wrapper around [CefBrowser] that will notify it about UI-related stuffs.
+ * Wrapper around [CefBrowser]
+ */
+sealed interface CefBrowserWrapper {
+    val browser: CefBrowser
+}
+
+/**
+ * Wrapper around [CefBrowser] awt implementation.
+ */
+class CefBrowserAwtWrapper(
+    client: CefClient,
+    url: String,
+    osr: Boolean,
+    transparent: Boolean,
+    context: CefRequestContext? = null
+) : CefBrowserWrapper {
+    override val browser: CefBrowser = client.createBrowser(url, osr, transparent, context)
+}
+
+/**
+ * Wrapper around [CefBrowserCompose] that will notify it about UI-related stuffs.
  * The constructor is public, but the use remains internal.
  *
- * @see [me.manriif.jcef.CefBrowser].
+ * @see [me.manriif.jcef.CefBrowserCompose].
  */
-class CefBrowserWrapper(window: ComposeWindow, client: CefClient, url: String) {
+class CefBrowserComposeWrapper(
+    window: ComposeWindow,
+    client: CefClient,
+    url: String
+) : CefBrowserWrapper {
 
-    private val osrBrowser = OsrCefBrowser(window, client, url)
+    private val osrBrowser = CefBrowserCompose(window, client, url)
 
     internal val image: Image
         get() = osrBrowser.image
 
-    val browser: CefBrowser
+    override val browser: CefBrowser
         get() = osrBrowser
 
     ///////////////////////////////////////////////////////////////////////////
